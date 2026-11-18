@@ -1,0 +1,37 @@
+{
+  "format": 1,
+  "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
+  "created": "2026-11-18T21:58:05Z",
+  "harness": {
+    "name": "custom-openai",
+    "model_api": "openai-compatible/nvidia/nemotron-3.5-lightning-30b-a3b",
+    "tree": "fc8c1b5c6d9105803a577e8baf8f3b43ced541804deb83ecf0b01831987f0da5",
+    "files": {
+      ".gitignore": "100644 fda3ba9bfb473fac576abce66431240652b74131",
+      "README.md": "100644 a4fad72e81ca01ccd7ca9e8064cc5944a858a1eb",
+      "ple_ext.py": "100755 8d07dbc90224497c8d549682b243b75609a6862e",
+      "requirements.txt": "100644 13ba6dbe5a230d71da63dd42ee49e86f580056dc",
+      "serve.py": "100644 14f445d0a93c28da4596511dacd9bac2e355c25b",
+      "submission.yaml": "100644 1a115bc86c76779098b4dab522e607fb2f9a12bb",
+      "taskbridge.py": "100644 26cc3d6cf8dbcaed859731ce9a6881f4ca8bfe40"
+    },
+    "commit": "92bc994dddc80c568e898fe368865fed8f27d107",
+    "dirty": true
+  },
+  "tasks": {
+    "wind-diaphragm-shear": {
+      "run": "custom-openai-20261119-021334",
+      "trial": "wind-diaphragm-shear__w3JtEdm",
+      "ended": "ok",
+      "reward": 0.0,
+      "tree": "fc8c1b5c6d9105803a577e8baf8f3b43ced541804deb83ecf0b01831987f0da5",
+      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
+      "files": {
+        "filesystem/final_batch4__structural_task5_wind_diaphragm_shear__blind/output/submission.zip": "ffb84b643216e0f587e531d0acd9ab0080a37324"
+      },
+      "final_message": "b202009e673393ff3a38c0834c436d2b82287cb4",
+      "deleted": [],
+      "skipped": []
+    }
+  }
+}

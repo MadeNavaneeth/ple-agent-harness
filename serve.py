@@ -38,6 +38,7 @@ import types
 from typing import Any
 
 import openai
+import ple_ext
 import taskbridge
 
 MODEL = os.environ.get("MODEL_NAME", "")
@@ -59,12 +60,12 @@ RESPONSES_ONLY = re.compile(
 # (marked()); other models cache on their own.
 CACHE_MARK = "claude" in MODEL.lower()
 COMPACT_AT_TOKENS = int(os.environ.get("COMPACT_AT_TOKENS", "150000"))
-TOOL_RESULT_CHARS = 30_000
+TOOL_RESULT_CHARS = int(os.environ.get("TOOL_RESULT_CHARS", "30000"))
 # MCP tools are offered as functions up to this many characters of JSON in all
 DIRECT_MCP_CHARS = 40_000
 # functions one request may offer (OpenAI's limit), the built-in four included
 MAX_TOOLS = 128
-KEEP_RECENT_RESULTS = 12
+KEEP_RECENT_RESULTS = int(os.environ.get("KEEP_RECENT_RESULTS", "12"))
 FINISH_MARGIN_SEC = 180
 RETRY_WAITS = (5, 15, 30, 60, 120)
 # How endpoints word an error saying the conversation no longer fits (xAI's:
@@ -236,6 +237,16 @@ TOOLS = [
         replace_all={"type": "boolean"},
     ),
 ]
+TOOLS.append(
+    tool(
+        "check_deliverable",
+        "Open a deliverable with the real library (zipfile/openpyxl/docx/"
+        "pdf/ifcopenshell/ezdxf) and report whether it is present, "
+        "parseable and complete. Call this before you finish.",
+        ["path"],
+        path={"type": "string"},
+    )
+)
 MCP_TOOLS = [
     tool(
         "mcp_find",
@@ -819,6 +830,11 @@ class Agent:
     # whether calls go to the Responses API rather than Chat Completions
     self.responses = MODEL.lower().startswith(RESPONSES_MODELS)
     self.finish_margin = FINISH_MARGIN_SEC
+    # --- PLE v2: deliverable contract state --------------------------
+    self.deliverables: list[dict[str, Any]] = []
+    self.gate_rounds = 0
+    self.steps = 0
+    self.early_nudges = 0
 
   async def run(self) -> str:
     """Runs the agent tool-calling loop until the task is complete.
@@ -846,6 +862,17 @@ class Agent:
         },
         {"role": "user", "content": self.session.instruction},
     ]
+    # PLE v2: find the graded deliverables and state the contract.
+    self.deliverables = ple_ext.detect(
+        self.session.instruction, self.session.workdir
+    )
+    contract = ple_ext.contract_message(self.deliverables)
+    if contract:
+      self.messages.append({"role": "system", "content": contract})
+      await self.session.log(
+          "deliverables: "
+          + json.dumps([d["path"] for d in self.deliverables])
+      )
     # head: the text of an answer cut off at the output limit
     nudges, head = 0, ""
     while True:
@@ -885,6 +912,11 @@ class Agent:
           })
           continue
         if visible(reply.text) or nudges >= 2:
+          problems = await self.gate()
+          if problems:
+            self.messages.append({"role": "user", "content": problems})
+            nudges, head = 0, ""
+            continue
           return text or self.session.final_message
         nudges += 1  # only consecutive empty turns end the run
         self.messages.append({
@@ -896,12 +928,21 @@ class Agent:
         })
         continue
       nudges, head = 0, ""
-      for call, args in zip(reply.calls.values(), arguments):
-        result = (
-            await self.run_tool(call["name"], args)
-            if isinstance(args, dict)
-            else args
-        )
+      calls = list(reply.calls.values())
+      semaphore = asyncio.Semaphore(8)  # the protocol's in-flight limit
+
+      async def _one(call, args):
+        async with semaphore:
+          return (
+              await self.run_tool(call["name"], args)
+              if isinstance(args, dict)
+              else args
+          )
+
+      results = await asyncio.gather(
+          *(_one(c, a) for c, a in zip(calls, arguments))
+      )
+      for call, args, result in zip(calls, arguments, results):
         if reply.finish == "length" and isinstance(args, str):
           result += (
               f" Your reply hit the {self.max_output}-token output limit; write"
@@ -910,11 +951,103 @@ class Agent:
         self.messages.append(
             {"role": "tool", "tool_call_id": call["id"], "content": result}
         )
+      # PLE v2: early nudge if nothing has been delivered yet.
+      self.steps += 1
+      if (
+          self.deliverables
+          and self.early_nudges < 2
+          and self.steps in (8, 16)
+      ):
+        probe = "; ".join(
+            (
+                "test -s "
+                + ple_ext.shell_quote(d["path"])
+                + " && echo 'PATHS: present '"
+                + ple_ext.shell_quote(d["path"])
+                + " || echo 'MISSING '"
+                + ple_ext.shell_quote(d["path"])
+            )
+            for d in self.deliverables
+        )
+        try:
+          probe_out = await self.session.exec(probe, 30)
+        except Exception:  # noqa: BLE001 - a probe must never end the run
+          probe_out = {"output": ""}
+        if "MISSING" in (probe_out.get("output") or ""):
+          self.early_nudges += 1
+          self.messages.append({
+              "role": "user",
+              "content": (
+                  "HARNESS: no complete deliverable exists yet. Write a"
+                  " complete, parseable first version NOW"
+                  + (
+                      " from the provided templates"
+                      if "template" in self.session.instruction.lower()
+                      else ""
+                  )
+                  + ", then keep improving it in place. An imperfect early"
+                  " file earns partial credit; no file scores zero."
+              ),
+          })
       left = self.session.time_left()
       if left is not None:
         self.messages[-1]["content"] += f"\n[{int(left // 60)} minutes left]"
       if self.prompt_tokens > self.compact_at():
         await self.compact()
+
+  async def check_deliverable(self, path: str) -> str:
+    """Validates one deliverable inside the task container.
+
+    Args:
+      path: Deliverable path, absolute or relative to the workdir.
+
+    Returns:
+      A one-line verdict starting with OK or FAIL.
+    """
+    spec = next(
+        (d for d in self.deliverables if d["path"] == self.path(path)),
+        None,
+    )
+    kind = spec["kind"] if spec else ple_ext.kind_of(path)
+    members = (spec or {}).get("members")
+    cap = int(self.session.limits.get("exec_timeout_sec") or 600)
+    left = self.session.time_left()
+    if left is not None:
+      cap = min(cap, max(1, int(left - self.finish_margin)))
+    command = ple_ext.validator_command(
+        kind, self.path(path), members
+    )
+    result = await self.session.exec(command, min(180, cap))
+    return ple_ext.describe(
+        ple_ext.parse_validation(result.get("output", ""))
+    )
+
+  async def gate(self) -> str:
+    """Checks every deliverable; returns a fix-it message, or ""."""
+    if not self.deliverables or self.gate_rounds >= 2:
+      return ""
+    left = self.session.time_left()
+    if left is not None and left < self.finish_margin + 150:
+      return ""
+    reports = []
+    for spec in self.deliverables:
+      try:
+        reports.append(await self.check_deliverable(spec["path"]))
+      except Exception as exc:  # noqa: BLE001
+        reports.append(f"FAIL {spec['path']}: {exc}")
+    if all(not r.startswith("FAIL") for r in reports):
+      return ""
+    self.gate_rounds += 1
+    await self.session.log("gate: " + " | ".join(reports))
+    return (
+        "DELIVERABLE CHECK FAILED. The run is graded only on these "
+        "files; a missing or unparseable file scores zero:\n"
+        + "\n".join("- " + r for r in reports)
+        + "\nFix every failure now (create the file if missing, write "
+        "it with code in the required format), re-run "
+        "check_deliverable, and only then finish. Do not answer with a "
+        "summary while a deliverable is missing or unparseable."
+    )
 
   async def finish(self, why: str) -> str:
     """Prompts the model for a final summary without tools when time is up.
@@ -925,6 +1058,15 @@ class Agent:
     Returns:
       The final summary text, falling back to `self.session.final_message`.
     """
+    if self.deliverables:
+      try:
+        reports = [
+            await self.check_deliverable(d["path"])
+            for d in self.deliverables
+        ]
+        why = why + " Deliverable status: " + "; ".join(reports) + "."
+      except Exception:  # noqa: BLE001 - never fail the wrap-up
+        pass
     self.messages.append({
         "role": "user",
         "content": (
@@ -1525,6 +1667,7 @@ class Agent:
           "read_file": self.read_file,
           "write_file": self.write_file,
           "edit_file": self.edit_file,
+          "check_deliverable": self.check_deliverable,
       }.get(name)
       return (
           clip(await handler(**args))
@@ -1576,9 +1719,11 @@ class Agent:
         command, taskbridge.positive_int(timeout_sec, 120, cap)
     )
     note = " (timed out)" if result.get("timed_out") else ""
+    output = result["output"] or "(no output)"
+    hint = ple_ext.recovery_hint(result.get("exit_code"), output)
     return (
         "exit code"
-        f" {result['exit_code']}{note}\n{result['output'] or '(no output)'}"
+        f" {result['exit_code']}{note}\n{output}{hint}"
     )
 
   async def read_file(self, path: str) -> str:
