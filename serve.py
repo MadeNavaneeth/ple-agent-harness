@@ -835,6 +835,7 @@ class Agent:
     self.gate_rounds = 0
     self.steps = 0
     self.early_nudges = 0
+    self.v0_built = False
 
   async def run(self) -> str:
     """Runs the agent tool-calling loop until the task is complete.
@@ -975,6 +976,25 @@ class Agent:
           probe_out = {"output": ""}
         if "MISSING" in (probe_out.get("output") or ""):
           self.early_nudges += 1
+          v0_note = ""
+          if not self.v0_built:
+            self.v0_built = True
+            try:
+              v0_out = await self.session.exec(
+                  ple_ext.v0_command(
+                      self.deliverables, self.session.workdir
+                  ),
+                  180,
+              )
+              report = ple_ext.parse_v0(v0_out.get("output", ""))
+              v0_note = (
+                  " The harness has already materialised a VALID v0"
+                  " package for you from the provided templates:"
+                  f" {json.dumps(report)}. Improve it in place; do not"
+                  " delete it and do not start over from an empty file."
+              )
+            except Exception:  # noqa: BLE001 - never fail the run here
+              v0_note = ""
           self.messages.append({
               "role": "user",
               "content": (
@@ -987,6 +1007,7 @@ class Agent:
                   )
                   + ", then keep improving it in place. An imperfect early"
                   " file earns partial credit; no file scores zero."
+                  + v0_note
               ),
           })
       left = self.session.time_left()

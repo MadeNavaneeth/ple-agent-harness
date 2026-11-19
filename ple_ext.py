@@ -44,9 +44,18 @@ _EXT_KIND = {
 # A deliverable mentioned only in passing is not a deliverable.
 _MAX_DELIVERABLES = 8
 
+# Names that appear in instructions as things to READ, not things to produce.
+_NOT_DELIVERABLES = {
+    "task.md", "readme.md", "readme.txt", "instructions.md", "license", "license.md",
+}
+
+_READ_CONTEXT = re.compile(r"read\s+`[^`]*`", re.I)
+
 
 def kind_of(path: str) -> str:
     """Maps a file path to a validator kind."""
+    if path.rstrip().endswith("/"):
+        return "dir"
     lower = path.lower()
     for ext, kind in _EXT_KIND.items():
         if lower.endswith(ext):
@@ -56,21 +65,31 @@ def kind_of(path: str) -> str:
 
 def _normalise(path: str, workdir: str) -> str:
     path = path.strip().strip("`'\"")
-    if path.startswith("/"):
+    is_dir = path.endswith("/")
+    path = path.rstrip("/")
+    if not path:
         return path
-    return posixpath.join(workdir.rstrip("/"), path)
+    resolved = path if path.startswith("/") else posixpath.join(workdir.rstrip("/"), path)
+    return resolved + "/" if is_dir else resolved
 
 
 def detect(instruction: str, workdir: str) -> list[dict[str, Any]]:
     """Finds the graded deliverables named in the task instruction."""
+    # Anything inside a "read `...`" phrase is an input, not a deliverable.
+    read_mentions = {
+        m.group(0).strip("`").lower()
+        for m in _READ_CONTEXT.finditer(instruction)
+    }
+    # Ordered by how authoritative the phrasing is.
     candidates: list[str] = []
     for pattern in (
-        r"write your deliverable to\s+`([^`]+)`",
+        r"write your deliverables?\s+(?:to|into|under)\s+`([^`]+)`",
         r"deliverables?:?\s+`([^`]+)`",
     ):
         for m in re.finditer(pattern, instruction, re.I):
             candidates.append(m.group(1))
-    for m in re.finditer(r"`([^`]*output/[^`]+)`", instruction):
+    # `output/...` paths, including a bare trailing-slash directory
+    for m in re.finditer(r"`([^`]*output/[^`]*)`", instruction):
         candidates.append(m.group(1))
     for m in re.finditer(
         r"`([\w./-]+\.(?:zip|xlsx|xlsm|docx|pptx|pdf|ifc|dxf|md))`", instruction
@@ -78,29 +97,44 @@ def detect(instruction: str, workdir: str) -> list[dict[str, Any]]:
         candidates.append(m.group(1))
 
     out: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen_path: set[str] = set()
+    seen_name: set[str] = set()
     for raw in candidates:
         if not raw or " " in raw:
             continue
         path = _normalise(raw, workdir)
-        if path in seen:
+        name = posixpath.basename(path)
+        if name.lower() in _NOT_DELIVERABLES:
             continue
-        seen.add(path)
+        if any(name.lower() in mention for mention in read_mentions):
+            continue
+        # The instruction names the same artifact more than once (absolute path,
+        # relative path, and again as the zip's own name). Keep the first, which
+        # came from the most authoritative phrasing, and never let a file be a
+        # "required member" of itself.
+        if path in seen_path or name in seen_name:
+            continue
+        seen_path.add(path)
+        seen_name.add(name)
         out.append({"path": path, "kind": kind_of(path)})
         if len(out) >= _MAX_DELIVERABLES:
             break
 
-    # The graded artifact is usually a zip holding all the others: if a zip is
-    # present it is the primary deliverable and the other named files are its
-    # members, so they must NOT be validated as separate top-level paths.
+    # A zip is normally the graded artifact and the other named files are its
+    # members, so validate only the zip and list the members for the report.
     zips = [d for d in out if d["kind"] == "zip"]
     if zips:
         primary = zips[0]
-        members = [posixpath.basename(d["path"]) for d in out if d is not primary]
+        members = [
+            posixpath.basename(d["path"])
+            for d in out
+            if d is not primary
+            and d["kind"] != "zip"
+            and posixpath.basename(d["path"]) != posixpath.basename(primary["path"])
+        ]
         if members:
             primary["members"] = members
-        rest = [d for d in out if d is not primary and d["kind"] == "zip"]
-        return [primary] + rest[:1]
+        return [primary]
     return out
 
 
@@ -228,6 +262,147 @@ def contract_message(deliverables: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- v0 builder
+
+_V0 = r'''
+import glob, json, os, sys, zipfile
+
+spec = json.loads(sys.argv[1])
+workdir = spec["workdir"]
+made_all, missing_all = [], []
+
+
+def make_minimal(outdir, name):
+    """Creates an empty-but-valid file of the right type when no template exists."""
+    target = os.path.join(outdir, name)
+    ext = os.path.splitext(name)[1].lower()
+    try:
+        if ext in (".xlsx", ".xlsm"):
+            import openpyxl
+            wb = openpyxl.Workbook()
+            wb.active.title = "Sheet1"
+            wb.save(target)
+        elif ext in (".md", ".txt", ".csv"):
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write("# draft\n\nHarness placeholder - replace with the real content.\n")
+        elif ext == ".json":
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write("{}\n")
+        elif ext == ".py":
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write("# draft - replace with the real implementation\n")
+        elif ext == ".dxf":
+            import ezdxf
+            ezdxf.new().saveas(target)
+        elif ext == ".pdf":
+            try:
+                from reportlab.pdfgen import canvas as _canvas
+                c = _canvas.Canvas(target)
+                c.setFont("Helvetica", 12)
+                c.drawString(72, 720, "Draft - harness placeholder; replace with the real document.")
+                c.showPage()
+                c.save()
+            except Exception:
+                import fitz
+                doc = fitz.open()
+                page = doc.new_page()
+                page.insert_text((72, 72), "Draft - harness placeholder.", fontsize=12)
+                doc.save(target)
+        elif ext == ".docx":
+            import docx
+            d = docx.Document()
+            d.add_heading("Draft", level=1)
+            d.add_paragraph("Harness placeholder - replace with the real content.")
+            d.save(target)
+        elif ext == ".pptx":
+            import pptx
+            pr = pptx.Presentation()
+            pr.slides.add_slide(pr.slide_layouts[5])
+            pr.save(target)
+        else:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def from_template(outdir, name):
+    stem = os.path.splitext(name)[0].lower()
+    ext = os.path.splitext(name)[1].lower()
+    candidates = []
+    for pattern in ("templates/**/*", "templates/*"):
+        candidates.extend(glob.glob(os.path.join(workdir, pattern), recursive=True))
+    for c in candidates:
+        if not os.path.isfile(c):
+            continue
+        base = os.path.basename(c).lower()
+        if not base.endswith(ext):
+            continue
+        if stem in base or os.path.splitext(base)[0] in stem:
+            with open(c, "rb") as src, open(os.path.join(outdir, name), "wb") as dst:
+                dst.write(src.read())
+            return True
+    return False
+
+
+for d in spec["deliverables"]:
+    path = d["path"]
+    if d["kind"] == "dir":
+        # A directory deliverable is filled by the model; nothing to synthesise.
+        print("PLE_V0 " + json.dumps({"created": [], "missing": [], "note": "dir deliverable"}))
+        continue
+    outdir = os.path.dirname(path) or "."
+    os.makedirs(outdir, exist_ok=True)
+    names = d.get("members") or [os.path.basename(path)]
+    if d["kind"] == "zip":
+        made, missing = [], []
+        for name in names:
+            if from_template(outdir, name) or make_minimal(outdir, name):
+                made.append(name)
+            else:
+                missing.append(name)
+        try:
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+                for name in names:
+                    full = os.path.join(outdir, name)
+                    if os.path.exists(full):
+                        z.write(full, name)
+        except Exception as exc:
+            missing.append("zip failed: " + str(exc))
+        made_all.extend(made)
+        missing_all.extend(missing)
+    else:
+        if from_template(outdir, names[0]) or make_minimal(outdir, names[0]):
+            made_all.append(names[0])
+        else:
+            missing_all.append(names[0])
+
+print("PLE_V0 " + json.dumps({"created": made_all, "missing": missing_all}))
+'''
+
+
+def v0_command(deliverables: list[dict[str, Any]], workdir: str) -> str:
+    """Builds a command that materialises a valid first version of every deliverable.
+
+    Guarantees a parseable artifact exists early, so an agent that never finishes
+    writing one still scores rather than zeroing the task.
+    """
+    spec = json.dumps({"workdir": workdir, "deliverables": deliverables})
+    return f"python3 - {shell_quote(spec)} <<'PLE_V0'\n{_V0}\nPLE_V0"
+
+
+def parse_v0(output: str) -> list[dict[str, Any]]:
+    """Extracts the v0 build report."""
+    reports = []
+    for line in (output or "").splitlines():
+        if line.startswith("PLE_V0 "):
+            try:
+                reports.append(json.loads(line[len("PLE_V0 ") :]))
+            except json.JSONDecodeError:
+                continue
+    return reports
+
+
 # --------------------------------------------------------------- validation
 
 _VALIDATOR = r'''
@@ -265,6 +440,47 @@ try:
             res["sheets"] = wb.sheetnames
             empty = [s for s in wb.sheetnames if wb[s].max_row <= 1]
             res["empty_sheets"] = empty
+            # A quantity/cost column that holds text makes downstream totals
+            # unreadable (the wind task's grader returned installed_cost = inf
+            # because of one non-numeric deck-cost cell).
+            hints = ("cost", "total", "qty", "quantity", "area", "load", "force",
+                     "kips", "plf", "usd", "deflection", "reaction", "shear",
+                     "capacity", "length", "width", "count")
+            nonnumeric: dict[str, int] = {}
+            for name in wb.sheetnames:
+                sheet = wb[name]
+                rows = sheet.iter_rows(values_only=True)
+                header = next(rows, None)
+                if not header:
+                    continue
+                cols = [
+                    i for i, h in enumerate(header)
+                    if h is not None
+                    and any(hint in str(h).lower() for hint in hints)
+                ]
+                if not cols:
+                    continue
+                bad = 0
+                for row in rows:
+                    for i in cols:
+                        value = row[i] if i < len(row) else None
+                        if value is None:
+                            continue
+                        if isinstance(value, bool):
+                            continue
+                        if isinstance(value, (int, float)):
+                            continue
+                        text = str(value).strip()
+                        if not text:
+                            continue
+                        try:
+                            float(text.replace(",", "").replace("$", ""))
+                        except ValueError:
+                            bad += 1
+                if bad:
+                    nonnumeric[name] = bad
+            if nonnumeric:
+                res["non_numeric_cells"] = nonnumeric
             res["ok"] = bool(wb.sheetnames)
             if not res["ok"]:
                 res["error"] = "workbook has no sheets"
@@ -319,6 +535,21 @@ try:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 json.load(fh)
             res["ok"] = True
+        elif kind == "dir":
+            files = []
+            for root, _dirs, names in os.walk(path):
+                for name in names:
+                    full = os.path.join(root, name)
+                    try:
+                        if os.path.getsize(full) > 0:
+                            files.append(os.path.relpath(full, path))
+                    except OSError:
+                        continue
+            res["files"] = files[:40]
+            res["count"] = len(files)
+            res["ok"] = len(files) > 0
+            if not res["ok"]:
+                res["error"] = "directory holds no non-empty files"
         else:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
@@ -363,5 +594,11 @@ def describe(result: dict[str, Any]) -> str:
                 bits.append(f"{key}={result[key]}")
         if result.get("empty_sheets"):
             bits.append("EMPTY SHEETS=" + ",".join(result["empty_sheets"]))
+        if result.get("non_numeric_cells"):
+            bits.append(
+                "TEXT IN NUMERIC COLUMNS="
+                + ",".join(f"{k}:{v}" for k, v in result["non_numeric_cells"].items())
+                + " (fill with numbers; totals will not add up otherwise)"
+            )
         return ", ".join(bits)
     return f"FAIL {path}: {result.get('error', 'unknown error')}"
