@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: custom-openai
-model_api: openai-compatible/nvidia/nemotron-3.5-lightning-30b-a3b
+model_api: google-cloud/gemini-3.8-flash
 model_base_url: https://integrate.api.nvidia.com/v1
 install: >-
   uv venv --python 3.12 /opt/harness/venv
