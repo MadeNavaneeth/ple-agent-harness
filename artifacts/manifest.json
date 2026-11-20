@@ -1,11 +1,11 @@
 {
   "format": 1,
   "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
-  "created": "2026-11-19T14:38:05Z",
+  "created": "2026-11-20T00:22:12Z",
   "harness": {
     "name": "custom-openai",
     "model_api": "openai-compatible/nvidia/nemotron-3.5-lightning-30b-a3b",
-    "tree": "98f805c508b3602b08c1a3cdfc0b9c2cab59f8caea3e56a7a2157555731245c8",
+    "tree": "d1694ca767110ca6856bbfeb9554ebd309864e2ebd73141376d36f6046ab33fe",
     "files": {
       ".gitignore": "100644 fda3ba9bfb473fac576abce66431240652b74131",
       "LICENSE": "100644 261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
@@ -13,20 +13,20 @@
       "ple_ext.py": "100755 bc7aaa11bfcd841ff2ed12ddf950949595260253",
       "requirements.txt": "100644 13ba6dbe5a230d71da63dd42ee49e86f580056dc",
       "serve.py": "100644 893d9a2e2cdf4b259e8390372aa877f8f6fb855e",
-      "submission.yaml": "100644 1a115bc86c76779098b4dab522e607fb2f9a12bb",
+      "submission.yaml": "100644 307659cf30bc8439d35bde93182f66be28bdb892",
       "taskbridge.py": "100644 26cc3d6cf8dbcaed859731ce9a6881f4ca8bfe40"
     },
-    "commit": "5e7aaeb08f191365ada6299aa0853d8340f5b870",
-    "dirty": false
+    "commit": "93e020777dfb286ffe1e32cfcd1ee67ba0a2dd54",
+    "dirty": true
   },
   "tasks": {
     "roof-deck-design": {
+      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
       "run": "v52c-checks",
       "trial": "roof-deck-design__dNi9L4V",
       "ended": "ok",
       "reward": 0.042857,
       "tree": "98f805c508b3602b08c1a3cdfc0b9c2cab59f8caea3e56a7a2157555731245c8",
-      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
       "files": {
         "filesystem/final_batch4__structural_task7_roof_deck_design__blind/output/submission.zip": "d8e908a6011900c54767555005d2cf6b3be95b08"
       },
@@ -59,6 +59,34 @@
         "filesystem/final_batch4__structural_task5_wind_diaphragm_shear__blind/output/submission.zip": "2c56998bf5fd3eab55377e5a1345dd095078acd3"
       },
       "final_message": "15cb3be04ce1321c7ce32f1de15b5dc4ff7df796",
+      "deleted": [],
+      "skipped": []
+    },
+    "fire-test-validation-memo": {
+      "run": "rubric-b1",
+      "trial": "fire-test-validation-memo__m2k2c2X",
+      "ended": "ok",
+      "reward": 0.129808,
+      "tree": "d1694ca767110ca6856bbfeb9554ebd309864e2ebd73141376d36f6046ab33fe",
+      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
+      "files": {
+        "app/files/output/E119_Validation_Memo.docx": "c34b9ecf0be119f9e05da9b272b46b8d09153426"
+      },
+      "final_message": "d001414ca1b5acd5b1cc11b10922fe530795baaf",
+      "deleted": [],
+      "skipped": []
+    },
+    "les-mesh-resolution": {
+      "run": "rubric-b1",
+      "trial": "les-mesh-resolution__BRucV9v",
+      "ended": "ok",
+      "reward": 0.097561,
+      "tree": "d1694ca767110ca6856bbfeb9554ebd309864e2ebd73141376d36f6046ab33fe",
+      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
+      "files": {
+        "filesystem/CFDME-2025-041_resolution_note_revA.docx": "3b9c20ab8d010d0798a0e5bc31b8b4ff2758d9bc"
+      },
+      "final_message": "97dfad7e20107dcc5b11813c09be1e489903607d",
       "deleted": [],
       "skipped": []
     }
