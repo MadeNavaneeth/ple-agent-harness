@@ -15,8 +15,7 @@
 # Stage 2: the evaluator injects MODEL_BASE_URL / MODEL_API_KEY for the declared
 # google-cloud model; a dev-only model_base_url must not be committed.
 name: custom-openai
-model_base_url: https://integrate.api.nvidia.com/v1
-model_api: openai-compatible/nvidia/nemotron-3.5-lightning-30b-a3b
+model_api: google-cloud/gemini-3.8-flash
 install: >-
   uv venv --python 3.12 /opt/harness/venv
   && uv pip install --python /opt/harness/venv/bin/python -r {src}/requirements.txt
