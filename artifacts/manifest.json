@@ -1,7 +1,7 @@
 {
   "format": 1,
   "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
-  "created": "2026-11-20T03:39:46Z",
+  "created": "2026-11-21T11:10:02Z",
   "harness": {
     "name": "custom-openai",
     "model_api": "openai-compatible/nvidia/nemotron-3.5-lightning-30b-a3b",
@@ -16,7 +16,7 @@
       "submission.yaml": "100644 307659cf30bc8439d35bde93182f66be28bdb892",
       "taskbridge.py": "100644 26cc3d6cf8dbcaed859731ce9a6881f4ca8bfe40"
     },
-    "commit": "a2aafeb85fb73e6fa8963c59ee88aa7207b1f88d",
+    "commit": "3c799a361a15f985cbc8f9eb7dd34e81dd775291",
     "dirty": true
   },
   "tasks": {
@@ -105,16 +105,46 @@
       "skipped": []
     },
     "emergency-spillway-check": {
+      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
       "run": "rubric-b4",
       "trial": "emergency-spillway-check__oUtE8gP",
       "ended": "ok",
       "reward": 0.189189,
       "tree": "d1694ca767110ca6856bbfeb9554ebd309864e2ebd73141376d36f6046ab33fe",
-      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
       "files": {
         "filesystem/Memo_to_Callaway_Spillway_2026-10-31.docx": "2a3e37a3b3b36f29d5f7e7c26e20d64fe14bd4c7"
       },
       "final_message": "02d8ec9dff02b7dc602ca4550fda5a848b82f423",
+      "deleted": [],
+      "skipped": []
+    },
+    "engineers-estimate-check": {
+      "run": "rubric-b5",
+      "trial": "engineers-estimate-check__pEZCeWx",
+      "ended": "ok",
+      "reward": 0.065217,
+      "tree": "d1694ca767110ca6856bbfeb9554ebd309864e2ebd73141376d36f6046ab33fe",
+      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
+      "files": {
+        "app/tools/.apps_data/.coordinator/config/config.json": "f7b7354d29a0cf2c3ed1d97a7e92fc3782b2c6eb",
+        "filesystem/Correspondence/Client/Memo_to_Callaway_2026-10-31.docx": "51ba14eb1a5a3c3cb8035499b44a161665c5071b",
+        "filesystem/create_memo.py": "c5ad37b65050085f169e945b8f067830634d4bdc"
+      },
+      "final_message": "11af5011f8a0231adc2cababca33331efed26f0d",
+      "deleted": [],
+      "skipped": []
+    },
+    "fire-solve-convergence": {
+      "run": "rubric-b5",
+      "trial": "fire-solve-convergence__sh5X2w9",
+      "ended": "ok",
+      "reward": 0.333333,
+      "tree": "d1694ca767110ca6856bbfeb9554ebd309864e2ebd73141376d36f6046ab33fe",
+      "dev_set": "85ad6d96fbf76ee64d9fb6339b3bf342b07128a2ebadc0a10f008c95dac01a48",
+      "files": {
+        "filesystem/CFDME-2025-041_transient_solve_disposition_revA.docx": "4af3aab7d15f4e8c70ba417206c5cef03c9aab97"
+      },
+      "final_message": "506f0e947d4ef67db4d2d5f1aed276f08ff0c692",
       "deleted": [],
       "skipped": []
     }
